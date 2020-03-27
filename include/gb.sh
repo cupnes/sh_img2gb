@@ -1,7 +1,15 @@
+if [ "${INCLUDE_GB_SH+is_defined}" ]; then
+	return
+fi
+INCLUDE_GB_SH=true
+
+. include/lr35902.sh
+
 GB_CART_ROM_SIZE=32432
 GB_ROM_START_ADDR=0150
 
 # I/O Ports
+GB_IO_JOYP=00
 GB_IO_LCDC=40
 GB_IO_STAT=41
 GB_IO_SCY=42

@@ -1,3 +1,10 @@
+if [ "${INCLUDE_LR35902_SH+is_defined}" ]; then
+	return
+fi
+INCLUDE_LR35902_SH=true
+
+. include/common.sh
+
 LR35902_ENTRY_ADDR=0100
 
 lr35902_nop() {
@@ -623,5 +630,3 @@ lr35902_rel_jump_with_cond() {
 		;;
 	esac
 }
-
-

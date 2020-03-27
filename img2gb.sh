@@ -14,8 +14,6 @@ DST_GB_FILE=$2
 temp_2bpp_dir=2bpp
 rm -rf $temp_2bpp_dir
 
-. include/common.sh
-. include/lr35902.sh
 . include/gb.sh
 
 print_prog_const() {
@@ -24,7 +22,9 @@ print_prog_const() {
 }
 
 print_prog_main() {
-	# 割り込みは使わないので止める
+	local loop_sz
+
+	# 割り込みは一旦無効にする
 	lr35902_disable_interrupts
 
 	# SPをFFFE(HMEMの末尾)に設定
@@ -47,23 +47,22 @@ print_prog_main() {
 	# - Bit 7: LCD Display Enable (0=Off, 1=On)
 	#   -> LCDを停止させるため0
 	# - Bit 6: Window Tile Map Display Select (0=9800-9BFF, 1=9C00-9FFF)
-	#   -> 9800-9BFFは背景に使うため、
-	#      ウィンドウタイルマップには9C00-9FFFを設定
+	#   -> どちらのタイルマップ領域も背景で使うが、
+	#      ひとまずウィンドウタイルマップには9C00-9FFF(1)を設定
 	# - Bit 5: Window Display Enable (0=Off, 1=On)
 	#   -> ウィンドウは使わないので0
 	# - Bit 4: BG & Window Tile Data Select (0=8800-97FF, 1=8000-8FFF)
-	#   -> タイルデータの配置領域は8000-8FFFにする
+	#   -> タイルデータの配置領域は8000-8FFF(1)にする
 	# - Bit 3: BG Tile Map Display Select (0=9800-9BFF, 1=9C00-9FFF)
-	#   -> 背景用のタイルマップ領域に9800-9BFFを使う
+	#   -> どちらも背景用のタイルマップ領域に使うが、
+	#      ひとまず9800-9BFF(0)を設定
 	# - Bit 2: OBJ (Sprite) Size (0=8x8, 1=8x16)
-	#   -> スプライトはまだ使わないので適当に8x8を設定
+	#   -> スプライトはまだ使わないので適当に8x8(0)を設定
 	# - Bit 1: OBJ (Sprite) Display Enable (0=Off, 1=On)
 	#   -> スプライトはまだ使わないので0
 	# - Bit 0: BG Display (0=Off, 1=On)
 	#   -> 背景は使うので1
-
 	lr35902_set_reg regA 51
-	# lr35902_set_reg regA 41
 	lr35902_copy_to_ioport_from_regA $GB_IO_LCDC
 
 	# タイルデータをVRAMのタイルデータ領域へロード
@@ -71,21 +70,33 @@ print_prog_main() {
 	lr35902_set_reg regDE 0150
 	lr35902_set_reg regHL 8000
 
-	lr35902_push_reg regBC
-	lr35902_set_reg regBC 0140
-	lr35902_copy_to_from regA ptrDE
-	lr35902_copy_to_from ptrHL regA
-	lr35902_inc regDE
-	lr35902_inc regHL
-	lr35902_dec regBC
-	lr35902_clear_reg regA
-	lr35902_compare_regA_and regC
-	lr35902_rel_jump_with_cond NZ $(two_comp 09)
-	lr35902_compare_regA_and regB
-	lr35902_rel_jump_with_cond NZ $(two_comp 0c)
-	lr35902_pop_reg regBC
-	lr35902_dec regC
-	lr35902_rel_jump_with_cond NZ $(two_comp 14)
+	(
+		lr35902_push_reg regBC
+		lr35902_set_reg regBC 0140
+		(
+			(
+				lr35902_copy_to_from regA ptrDE
+				lr35902_copy_to_from ptrHL regA
+				lr35902_inc regDE
+				lr35902_inc regHL
+				lr35902_dec regBC
+				lr35902_clear_reg regA
+				lr35902_compare_regA_and regC
+			) >print_prog_main.loop1.o
+			cat print_prog_main.loop1.o
+			loop_sz=$(stat -c '%s' print_prog_main.loop1.o)
+			lr35902_rel_jump_with_cond NZ $(two_comp_d $((loop_sz + 2)))
+			lr35902_compare_regA_and regB
+		) >print_prog_main.loop2.o
+		cat print_prog_main.loop2.o
+		loop_sz=$(stat -c '%s' print_prog_main.loop2.o)
+		lr35902_rel_jump_with_cond NZ $(two_comp_d $((loop_sz + 2)))
+		lr35902_pop_reg regBC
+		lr35902_dec regC
+	) >print_prog_main.loop3.o
+	cat print_prog_main.loop3.o
+	loop_sz=$(stat -c '%s' print_prog_main.loop3.o)
+	lr35902_rel_jump_with_cond NZ $(two_comp_d $((loop_sz + 2)))
 
 	# タイル番号をVRAMの背景用タイルマップ領域へ設定
 	lr35902_clear_reg regA
@@ -101,7 +112,8 @@ print_prog_main() {
 	lr35902_dec regB
 	lr35902_rel_jump_with_cond NZ $(two_comp 0e)
 
-	# 高さ半分の位置(LY=74)でLCDCステータス割り込み(INT:48)を上げるようにする
+	# 高さ半分の位置(LY=72)で
+	# LCDCステータス割り込み(INT:48)を上げるようにする
 	lr35902_set_reg regA 48
 	lr35902_copy_to_ioport_from_regA $GB_IO_LYC
 	lr35902_copy_to_regA_from_ioport $GB_IO_STAT
@@ -117,10 +129,10 @@ print_prog_main() {
 
 	# LCD再開
 	lr35902_set_reg regA d1
-	# lr35902_set_reg regA c1
 	lr35902_copy_to_ioport_from_regA $GB_IO_LCDC
 
-	# 割り込み駆動の処理部
+	# 以降、割り込み駆動の処理部
+
 	lr35902_halt
 	lr35902_disable_interrupts
 
